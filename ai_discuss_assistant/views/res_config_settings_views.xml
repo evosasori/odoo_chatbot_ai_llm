@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="res_config_settings_view_form_ai_discuss" model="ir.ui.view">
+            <field name="name">res.config.settings.view.form.ai.discuss</field>
+            <field name="model">res.config.settings</field>
+            <field name="priority" eval="90"/>
+            <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//form" position="inside">
+                    <app data-string="AI Discuss Assistant" string="AI Discuss Assistant" name="ai_discuss_assistant">
+                        <block title="AI Endpoint &amp; Credentials" name="ai_discuss_credentials_block">
+                            <setting id="ai_discuss_endpoint_setting" string="AI Assistant Base URL" help="OpenAI-compatible Base URL (e.g., https://api.openai.com/v1 or local 9router gateway). Leave empty to inherit from AI Document Extraction.">
+                                <field name="ai_discuss_endpoint" placeholder="https://api.openai.com/v1"/>
+                            </setting>
+
+                            <setting id="ai_discuss_api_key_setting" string="AI Assistant API Key" help="Bearer token for your custom endpoint. Leave empty to inherit from AI Document Extraction.">
+                                <field name="ai_discuss_api_key" password="True" placeholder="sk-..."/>
+                            </setting>
+
+                            <setting id="ai_discuss_model_setting" string="AI Assistant Model" help="Pilih model AI dari daftar model API atau sinkronkan daftar model terbaru dari server AI Gateway.">
+                                <div class="content-group">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <field name="ai_discuss_model_id" placeholder="Pilih model AI..." class="w-75"/>
+                                        <button name="action_fetch_ai_models" type="object" string="🔄 Ambil Model dari API" class="btn btn-secondary btn-sm"/>
+                                    </div>
+                                    <div class="text-muted small mt-1">
+                                        <span>Kode Model Aktif: </span><code><field name="ai_discuss_model" class="oe_inline"/></code>
+                                    </div>
+                                </div>
+                            </setting>
+
+                            <setting id="ai_discuss_test_connection_setting" string="Connection Diagnostics" help="Test connectivity and measure response latency from Odoo to the AI Gateway.">
+                                <div class="mt-2">
+                                    <button name="action_test_ai_discuss_connection" type="object" string="⚡ Test AI Assistant Connection" class="btn btn-primary btn-sm"/>
+                                </div>
+                            </setting>
+                        </block>
+
+                        <block title="Agent Capabilities &amp; Tool Permissions" name="ai_discuss_tools_block">
+                            <setting id="ai_discuss_enable_tools_setting" string="Enable ORM Actions" help="Allows AI to safely create and search records (Contacts, Leads, Orders) under the active user's permissions and business rules.">
+                                <field name="ai_discuss_enable_tools"/>
+                            </setting>
+
+                            <setting id="ai_discuss_enable_sql_setting" string="Enable Read-Only PostgreSQL Queries" help="Allows AI to execute safe SELECT queries for analytics and counting. Mutation statements (INSERT/UPDATE/DELETE) are strictly blocked.">
+                                <field name="ai_discuss_enable_sql"/>
+                            </setting>
+
+                            <setting id="ai_discuss_tuning_setting" string="Response Tuning" help="Adjust conversation history window and creativity temperature.">
+                                <div class="content-group">
+                                    <div class="row mt16">
+                                        <label for="ai_discuss_temperature" class="col-lg-3 o_light_label" string="Temperature"/>
+                                        <field name="ai_discuss_temperature" class="oe_inline"/>
+                                    </div>
+                                    <div class="row mt8">
+                                        <label for="ai_discuss_max_history" class="col-lg-3 o_light_label" string="History Window (msgs)"/>
+                                        <field name="ai_discuss_max_history" class="oe_inline"/>
+                                    </div>
+                                </div>
+                            </setting>
+                        </block>
+
+                        <block title="Custom System Prompt &amp; Instructions" name="ai_discuss_prompt_block">
+                            <setting id="ai_discuss_system_prompt_setting" string="Custom Administrator Instructions" help="Provide business rules or persona guidance to customize how the assistant responds to your team.">
+                                <field name="ai_discuss_system_prompt" placeholder="e.g. Selalu gunakan sapaan formal, prioritaskan menjawab seputar SOP kantor..."/>
+                            </setting>
+                        </block>
+                    </app>
+                </xpath>
+            </field>
+        </record>
+    </data>
+</odoo>
