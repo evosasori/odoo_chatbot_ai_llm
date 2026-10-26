@@ -3,6 +3,7 @@ import json
 import re
 import requests
 import logging
+from markupsafe import Markup
 from odoo import api, fields, models
 from odoo.tools import html2plaintext
 from odoo.exceptions import UserError, AccessError
@@ -163,8 +164,8 @@ You are chatting with an internal ERP user through Odoo Discuss.
    - Complete all dependent records and return links to each newly created record.
 5. **Data Inspection & Exploration**:
    - To inspect fields of an Odoo model before creating or searching, use `get_model_fields`.
-   - To find or filter existing records, use `search_read_records`.
-   - For complex analytical questions, aggregations, or stats (e.g. "how many active customers do we have?"), you can use `query_database_readonly` to execute a fast SQL SELECT.
+   - To find or filter existing records, use `search_read_records`. IMPORTANT: the domain `id` in Odoo is an integer record ID, while a document number like "REG5813" or "S00026" is the `name` field — always search `[("name", "=", "REG5813")]`, never `[("id", "=", 5813)]`.
+   - For complex analytical questions, aggregations, or stats (e.g. "how many active customers do we have?"), you can use `query_database_readonly` to execute a fast SQL SELECT. PostgreSQL tip: `ir_model.name` is a translatable JSONB column — cast it with `name::text` before using ILIKE on it.
 6. **Communication Style**:
    - Respond in the language used by the user (primarily Indonesian / English).
    - Format responses using clean HTML tags (`<p>`, `<b>`, `<ul>`, `<li>`, `<code>`, `<a href="...">`).
@@ -515,6 +516,66 @@ You are chatting with an internal ERP user through Odoo Discuss.
         return json.dumps({"error": f"Tool '{tool_name}' is not recognized."})
 
     @api.model
+    def _extract_executed_actions(self, messages):
+        """Collect a human-readable list of executed tool calls from the message log."""
+        actions = []
+        tool_names = {
+            'get_model_fields': 'Memeriksa struktur model',
+            'search_read_records': 'Mencari data record',
+            'create_record': 'Membuat record baru',
+            'execute_model_method': 'Menekan tombol/metode aksi',
+            'query_database_readonly': 'Menjalankan query analitik',
+        }
+        for msg in messages:
+            if msg.get('role') != 'tool':
+                continue
+            name = (msg.get('name') or '').strip()
+            label = tool_names.get(name, name)
+            actions.append(label)
+        return actions
+
+    @api.model
+    def _notify_step_status(self, user_id, channel_id, bot_partner_id, func_name, func_args):
+        """Push a lightweight 'step' notification into the chat so the user sees progress."""
+        step_labels = {
+            'get_model_fields': 'Memeriksa struktur model',
+            'search_read_records': 'Mencari data record',
+            'create_record': 'Membuat record baru',
+            'execute_model_method': 'Menekan tombol/metode aksi',
+            'query_database_readonly': 'Menjalankan query analitik',
+        }
+        label = step_labels.get(func_name, func_name)
+        detail = ''
+        try:
+            args = json.loads(func_args) if isinstance(func_args, str) else (func_args or {})
+            model = args.get('model') or ''
+            if model:
+                detail = f" <code>{model}</code>"
+            if func_name == 'query_database_readonly':
+                detail = ' <code>SELECT ...</code>'
+            if func_name == 'search_read_records' and args.get('domain'):
+                detail = f" <code>{model}</code> domain <code>{args.get('domain')}</code>"
+            if func_name == 'create_record':
+                detail = f" <code>{model}</code>"
+            if func_name == 'execute_model_method':
+                detail = f" <code>{args.get('method_name')}</code> pada <code>{model}</code> #{args.get('record_id')}"
+        except Exception:
+            pass
+
+        try:
+            channel = self.env['discuss.channel'].sudo().browse(channel_id)
+            if channel.exists():
+                channel.message_post(
+                    author_id=bot_partner_id,
+                    body=Markup(f"<p class='text-muted' style='font-size:0.9em;'><i>⏳ {label}{detail}…</i></p>"),
+                    message_type='comment',
+                    subtype_xmlid='mail.mt_note',
+                )
+                self.env.cr.commit()
+        except Exception:
+            _logger.debug('Step status notification failed (non-blocking)')
+
+    @api.model
     def process_chat_message(self, user_id, channel_id, user_prompt):
         """Orchestrates LLM query, multi-turn tool calling loop, and returns final HTML reply."""
         channel = self.env['discuss.channel'].browse(channel_id)
@@ -571,7 +632,8 @@ You are chatting with an internal ERP user through Odoo Discuss.
             enable_sql=config['enable_sql']
         )
 
-        max_turns = 10
+        max_turns = 15
+        force_summary_turns = max_turns - 1
         current_turn = 0
 
         while current_turn < max_turns:
@@ -583,9 +645,18 @@ You are chatting with an internal ERP user through Odoo Discuss.
                 "stream": False,
             }
             if tools:
-                if current_turn == max_turns:
-                    # Final turn: force assistant to summarize and stop calling tools
+                if current_turn >= force_summary_turns:
+                    # Final turns: force the assistant to wrap up in natural language
                     payload["tool_choice"] = "none"
+                    messages.append({
+                        "role": "user",
+                        "content": (
+                            "Ringkas sekarang dalam Bahasa Indonesia apa yang sudah kamu temukan dan/atau kerjakan. "
+                            "Jika tindakan belum berhasil, jelaskan alasan spesifiknya (misalnya field tidak ditemukan, "
+                            "hak akses ditolak, atau metode yang benar) dan saran langkah manual yang bisa dilakukan user. "
+                            "Jangan memanggil tool lagi."
+                        ),
+                    })
                 else:
                     payload["tools"] = tools
                     payload["tool_choice"] = "auto"
@@ -603,11 +674,20 @@ You are chatting with an internal ERP user through Odoo Discuss.
 
                 # If no tool calls, return final response
                 if not tool_calls:
-                    final_content = message_resp.get('content', '')
+                    final_content = (message_resp.get('content') or '').strip()
                     if not final_content:
-                        return "<p><i>(AI Assistant tidak memberikan balasan teks)</i></p>"
+                        # Model gave an empty message (happens on some routers when forced to summarize):
+                        # produce a useful fallback summary instead of a silent "(no reply)".
+                        actions = self._extract_executed_actions(messages)
+                        if actions:
+                            lines = ''.join(f"<li>{a}</li>" for a in actions[-6:])
+                            return (
+                                "<p>Selesai memproses permintaan Anda. Ringkasan langkah yang sudah saya jalankan:</p>"
+                                f"<ul>{lines}</ul>"
+                                "<p>Silakan cek hasilnya. Jika hasilnya belum sesuai, beri tahu saya detail yang kurang.</p>"
+                            )
+                        return "<p>Maaf, saya belum berhasil menyusun jawaban dari model. Coba ulangi perintah dengan lebih spesifik.</p>"
 
-                    # Wrap plain newlines in paragraphs if raw markdown
                     formatted_reply = final_content.replace('\n', '<br/>')
                     return formatted_reply
 
@@ -622,6 +702,7 @@ You are chatting with an internal ERP user through Odoo Discuss.
                     func_args = func.get('arguments')
 
                     _logger.info("AI Assistant executing tool: %s with args: %s", func_name, func_args)
+                    self._notify_step_status(user_id, channel_id, bot_partner_id, func_name, func_args)
                     tool_output = self.execute_tool(user_id, func_name, func_args)
 
                     messages.append({
