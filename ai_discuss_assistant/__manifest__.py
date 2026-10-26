@@ -32,6 +32,7 @@ Key Features:
         'data/ai_discuss_assistant_data.xml',
         'views/res_config_settings_views.xml',
     ],
+    'post_init_hook': 'post_init_hook',
     'installable': True,
     'application': False,
     'auto_install': False,
