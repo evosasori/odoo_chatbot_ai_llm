@@ -30,7 +30,9 @@ Key Features:
     'data': [
         'security/ir.model.access.csv',
         'data/ai_discuss_assistant_data.xml',
+        'data/ai_discuss_context_data.xml',
         'views/res_config_settings_views.xml',
+        'views/ai_discuss_context_views.xml',
     ],
     'post_init_hook': 'post_init_hook',
     'installable': True,

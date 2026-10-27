@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <record id="ctx_keyword_registrasi" model="ai.discuss.context">
+            <field name="keyword">registrasi</field>
+            <field name="model_name">cdn.registrasi.periksa</field>
+            <field name="description">Model cdn.registrasi.periksa di SIMRS ini menyimpan data registrasi/pendaftaran pasien (REG). Perhatikan: nomor REG seperti REG5813 adalah nilai FIELD name, bukan ID numeric. Field penting: name (nomor reg), pasien_id (Many2one ke pasien), tanggal, status, dsb. Untuk mengganti status gunakan tool execute_model_method pada model ini (contoh panggil method yang menandai selesai), atau perbarui via create_record/search_read_records sesuai konteks.</field>
+        </record>
+
+        <record id="ctx_keyword_pasien" model="ai.discuss.context">
+            <field name="keyword">pasien</field>
+            <field name="model_name">cdn.pasien</field>
+            <field name="description">Model pasien di SIMRS menyimpan data master pasien (nama, NIK, tanggal lahir, alamat, dll). Cari dengan search_read_records domain [('name','ilike',...)] atau field lain yang relevan, lalu pakai untuk keperluan registrasi/pemeriksaan.</field>
+        </record>
+
+        <record id="ctx_keyword_pemeriksaan" model="ai.discuss.context">
+            <field name="keyword">pemeriksaan</field>
+            <field name="model_name">cdn.pemeriksaan</field>
+            <field name="description">Model ini menyimpan data pemeriksaan pasien, termasuk status pasien (misal 'membaik', 'stabil', 'perlu rawat'). Perbarui status pasien dengan execute_model_method atau update field status yang tepat.</field>
+        </record>
+
+        <record id="ctx_keyword_selesai" model="ai.discuss.context">
+            <field name="keyword">selesaikan</field>
+            <field name="model_name">cdn.selesai.periksa</field>
+            <field name="description">Kata kunci 'selesaikan' mengindikasikan user ingin menyelesaikan/menutup satu proces registrasi/pemeriksaan (menandai selesai). Cari record registrasi berdasarkan name (misal REG5813), lalu jalankan method/update untuk menandai status selesai. Jika ada tombol aksi (button method) pada model, gunakan execute_model_method.</field>
+        </record>
+
+    </data>
+</odoo>

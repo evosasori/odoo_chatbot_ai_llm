@@ -189,6 +189,41 @@ You are chatting with an internal ERP user through Odoo Discuss.
         return context_prompt
 
     @api.model
+    def _inject_context_keywords(self, system_content, user_prompt):
+        """Append curated keyword -> model descriptions (ai.discuss.context) to system prompt.
+
+        If the user's message contains a configured keyword (e.g. "registrasi"),
+        the matching description is appended so the LLM doesn't have to guess the
+        schema of custom models (e.g. SIMRS).
+        """
+        if not user_prompt:
+            return system_content
+        contexts = self.env['ai.discuss.context'].sudo().search([('active', '=', True)])
+        if not contexts:
+            return system_content
+
+        lower = user_prompt.lower()
+        matches = []
+        for ctx in contexts:
+            kw = (ctx.keyword or '').strip().lower()
+            if kw and kw in lower:
+                model_part = f" (model <code>{ctx.model_name}</code>)" if ctx.model_name else ''
+                matches.append(f"- **{ctx.keyword}**{model_part}: {ctx.description}")
+
+        if not matches:
+            return system_content
+
+        section = (
+            "\n### 📚 Konteks Model Relevan (dari panduan admin):\n"
+            "Berikut pengetahuan terkurasi tentang model Odoo yang relevan dengan pesan user.\n"
+            "GUNAKAN INI sebagai referensi utama untuk memahami skema SEBELUM memanggil tool "
+            "(jangan menebak field/ID). Jangan panggil ulang get_model_fields untuk model yang "
+            "sudah dijelaskan di sini:\n"
+            + "\n".join(matches) + "\n"
+        )
+        return system_content + section
+
+    @api.model
     def get_tool_definitions(self, enable_tools=True, enable_sql=True):
         """Returns OpenAI-compatible function calling tool schemas."""
         tools = []
@@ -601,8 +636,9 @@ You are chatting with an internal ERP user through Odoo Discuss.
             'Content-Type': 'application/json',
         }
 
-        # 1. System Prompt Context
+        # 1. System Prompt Context (+ keyword-based curated context injection)
         system_content = self.build_system_context(user, company)
+        system_content = self._inject_context_keywords(system_content, user_prompt)
         messages = [{"role": "system", "content": system_content}]
 
         # 2. Conversation History from Channel
